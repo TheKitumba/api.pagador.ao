@@ -1,0 +1,178 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model user {
+  id            String                 @id @default(uuid())
+  first_name    String
+  last_name     String
+  email         String                 @unique
+  phone_number  String                 @unique
+  password_hash String
+  role          user_role              @default(EMPLOYEE)
+  department_id String?
+  position_id   String?
+  salary        salary?
+  evaluations   evaluation[]           @relation("UserEvaluations")
+  leaves        leave[]
+  trainings     training_participant[]
+  created_at    DateTime               @default(now())
+  updated_at    DateTime               @updatedAt
+
+  department department?  @relation(fields: [department_id], references: [id])
+  position   position?    @relation(fields: [position_id], references: [id])
+  reviews    evaluation[] @relation("Reviewer")
+}
+
+enum user_role {
+  ADMIN
+  HR_MANAGER
+  EMPLOYEE
+}
+
+model department {
+  id          String        @id @default(uuid())
+  name        String        @unique
+  description String?
+  users       user[]
+  positions   position[]
+  created_at  DateTime      @default(now())
+  updated_at  DateTime      @updatedAt
+  job_posting job_posting[]
+}
+
+model position {
+  id            String   @id @default(uuid())
+  title         String
+  description   String?
+  department_id String
+  users         user[]
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  department department @relation(fields: [department_id], references: [id])
+}
+
+model salary {
+  id           String   @id @default(uuid())
+  user_id      String   @unique
+  base_salary  Int
+  benefits     Int      @default(0)
+  deductions   Int      @default(0)
+  net_salary   Int
+  payment_date DateTime
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  user user @relation(fields: [user_id], references: [id])
+}
+
+model leave {
+  id         String       @id @default(uuid())
+  user_id    String
+  leave_type leave_type
+  start_date DateTime
+  end_date   DateTime
+  status     leave_status @default(PENDING)
+  reason     String?
+  created_at DateTime     @default(now())
+  updated_at DateTime     @updatedAt
+
+  user user @relation(fields: [user_id], references: [id])
+}
+
+enum leave_type {
+  VACATION
+  SICK
+  MATERNITY
+  PATERNITY
+  UNPAID
+}
+
+enum leave_status {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model job_posting {
+  id            String            @id @default(uuid())
+  title         String
+  description   String
+  department_id String?
+  is_active     Boolean           @default(true)
+  posted_at     DateTime          @default(now())
+  applications  job_application[]
+  created_at    DateTime          @default(now())
+  updated_at    DateTime          @updatedAt
+
+  department department? @relation(fields: [department_id], references: [id])
+}
+
+model job_application {
+  id             String             @id @default(uuid())
+  job_posting_id String
+  full_name      String
+  email          String
+  phone_number   String
+  resume_url     String?
+  status         application_status @default(RECEIVED)
+  applied_at     DateTime           @default(now())
+
+  job_posting job_posting @relation(fields: [job_posting_id], references: [id])
+}
+
+enum application_status {
+  RECEIVED
+  IN_REVIEW
+  INTERVIEW
+  REJECTED
+  HIRED
+}
+
+model evaluation {
+  id          String   @id @default(uuid())
+  user_id     String
+  reviewer_id String
+  score       Int
+  comments    String?
+  review_date DateTime
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  user     user @relation("UserEvaluations", fields: [user_id], references: [id])
+  reviewer user @relation("Reviewer", fields: [reviewer_id], references: [id])
+}
+
+model training {
+  id           String                 @id @default(uuid())
+  title        String
+  description  String?
+  start_date   DateTime
+  end_date     DateTime
+  participants training_participant[]
+  created_at   DateTime               @default(now())
+  updated_at   DateTime               @updatedAt
+}
+
+model training_participant {
+  id          String  @id @default(uuid())
+  training_id String
+  user_id     String
+  attended    Boolean @default(false)
+
+  training training @relation(fields: [training_id], references: [id])
+  user     user     @relation(fields: [user_id], references: [id])
+}
