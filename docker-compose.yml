@@ -1,4 +1,22 @@
-version: '3.8'
+# pagador.ao — local stack.
+#   Infrastructure only (run the API with `pnpm start:dev`):  docker compose up -d postgres redis minio
+#   Everything in containers:                                  docker compose up -d --build
+# The api/worker/migrate services read .env and override the hostnames for the compose network.
+# RS256 keys are mounted from ./keys (generate them with `pnpm keys:generate`).
+
+x-app: &app
+  build: .
+  image: pagador-api:local
+  env_file: .env
+  environment: &app-env
+    NODE_ENV: production
+    DATABASE_URL: postgresql://local_user:local_password@postgres:5432/local_db?schema=public
+    REDIS_URL: redis://redis:6379
+    S3_ENDPOINT: http://minio:9000
+  volumes:
+    - ./keys:/app/keys:ro
+  networks:
+    - pagador_network
 
 services:
   postgres:
@@ -13,6 +31,11 @@ services:
       - '5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U local_user -d local_db']
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - pagador_network
 
@@ -24,12 +47,74 @@ services:
       - '6379:6379'
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - pagador_network
+
+  # MinIO (S3-compatible object storage). Official community images are no longer published
+  # on Docker Hub/Quay, so this uses the Pigsty rebuild of the open-source MinIO server.
+  # Console: http://localhost:9001 (local_minio / local_minio_password).
+  minio:
+    image: pgsty/minio:latest
+    container_name: local_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: local_minio
+      MINIO_ROOT_PASSWORD: local_minio_password
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio_data:/data
+    networks:
+      - pagador_network
+
+  # One-shot: applies migrations (incl. Row-Level Security) and seeds reference + demo data.
+  migrate:
+    <<: *app
+    container_name: pagador_migrate
+    command: ['sh', '-c', 'node_modules/.bin/prisma migrate deploy && node dist/seed']
+    restart: 'no'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+
+  api:
+    <<: *app
+    container_name: pagador_api
+    command: ['node', 'dist/main']
+    restart: unless-stopped
+    ports:
+      - '3333:3333'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # BullMQ worker: outbox relay → notifications/e-mail, large payroll calculations, daily alerts.
+  worker:
+    <<: *app
+    container_name: pagador_worker
+    command: ['node', 'dist/worker']
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   postgres_data:
   redis_data:
+  minio_data:
 
 networks:
   pagador_network:
