@@ -1,98 +1,96 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# api.pagador.ao
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+API de recursos humanos e folha de pagamento do pagador.ao: NestJS 11, PostgreSQL com Row-Level Security, Redis/BullMQ, MinIO e Prisma, organizada por contextos delimitados (DDD).
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+A arquitectura está descrita em [`frontend/docs/09-arquitectura-tecnica.md`](../frontend/docs/09-arquitectura-tecnica.md); as regras de negócio estão nos documentos 02 a 05.
 
-## Description
+## Arranque rápido
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+Requisitos: Node 22+ (recomendado 24), pnpm, Docker e OpenSSL.
 
 ```bash
-$ pnpm install
+pnpm install
+cp .env.example .env          # ajuste GMAIL_USER / GMAIL_APP_PASSWORD para enviar e-mails
+pnpm keys:generate            # par de chaves RS256 em ./keys
+docker compose up -d postgres redis minio
+pnpm db:migrate               # migrações, incluindo as políticas de RLS
+pnpm db:seed                  # bancos, províncias, tabelas legais e empresa de demonstração
+pnpm start:dev                # API em http://localhost:3333/v1
+pnpm start:worker             # noutro terminal: outbox, notificações, cálculo e alertas
 ```
 
-## Compile and run the project
+**Documentação interactiva (Swagger):** <http://localhost:3333/v1/docs> · especificação: `/v1/openapi.json`.
+
+### Tudo em contentores
 
 ```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+pnpm keys:generate
+docker compose up -d --build
 ```
 
-## Run tests
+| Serviço | Função | Porta |
+| --- | --- | --- |
+| `postgres` | PostgreSQL 16 | 5432 |
+| `redis` | Filas BullMQ e adaptador Socket.IO | 6379 |
+| `minio` | Ficheiros (S3); consola em `:9001` | 9000, 9001 |
+| `migrate` | Tarefa única: `prisma migrate deploy` e seed | — |
+| `api` | HTTP e Socket.IO (`/realtime`) | 3333 |
+| `worker` | Processadores BullMQ | — |
 
-```bash
-# unit tests
-$ pnpm run test
+A `api` e o `worker` lêem o `.env` e substituem apenas os nomes de anfitrião da rede do compose.
 
-# e2e tests
-$ pnpm run test:e2e
+## Contas de demonstração
 
-# test coverage
-$ pnpm run test:cov
+O seed cria a empresa **Kianda Logística, Lda.** com 13 trabalhadores (os mesmos dos dados de demonstração do frontend). Palavra-passe de todas as contas: `Pagador#2026` (altere com `SEED_DEMO_PASSWORD`; `SEED_DEMO=false` cria só os dados de referência).
+
+| E-mail | Papéis | Útil para |
+| --- | --- | --- |
+| `admin@kianda.co.ao` | Administrador, RH, processador, aprovador | Tudo |
+| `isabel.neto@kianda.co.ao` | Gestora de RH, chefia | Trabalhadores, férias, contratos |
+| `ana.mateus@kianda.co.ao` | Processadora salarial | Calcular e submeter a folha |
+| `graca.mbemba@kianda.co.ao` | Aprovadora financeira | Aprovar a folha e os lotes bancários |
+| `edvania.tavares@kianda.co.ao` | Técnica de RH | Perfil sem acesso à folha |
+| `domingos.cassoma@kianda.co.ao` | Chefia | Aprovar pedidos da equipa |
+
+A segregação de funções aplica-se: quem calcula uma folha não a pode aprovar.
+
+## Configuração
+
+Todas as variáveis estão em [`.env.example`](./.env.example) e são validadas com Zod no arranque.
+
+- **Autenticação — RS256.** `JWT_PRIVATE_KEY_PATH` assina os tokens de acesso (15 min); `JWT_PUBLIC_KEY_PATH` valida-os. Os tokens viajam em cookies `HttpOnly` (`access_token`; `refresh_token` só em `/v1/auth`) ou em `Authorization: Bearer`. As mutações exigem um cabeçalho `Origin` incluído em `CORS_ORIGINS`.
+- **Ficheiros — MinIO.** `S3_*` aponta para o MinIO local; o bucket é criado automaticamente. Em produção, qualquer serviço compatível com S3.
+- **E-mail — Nodemailer com Gmail.** Use uma *palavra-passe de aplicação* Google (Conta Google → Segurança → Verificação em dois passos → Palavras-passe de aplicações) em `GMAIL_APP_PASSWORD`. Sem credenciais, os e-mails são escritos no log.
+
+## Comandos
+
+| Comando | Descrição |
+| --- | --- |
+| `pnpm start:dev` | Serviços de suporte e API em modo *watch* |
+| `pnpm start:worker` | Worker em modo *watch* |
+| `pnpm build` | Compila para `dist/` (`main.js`, `worker.js`, `seed.js`) |
+| `pnpm start:prod` / `pnpm start:worker:prod` | Executa a compilação |
+| `pnpm db:migrate:dev` | Cria uma migração a partir do `schema.prisma` |
+| `pnpm db:migrate` | Aplica as migrações pendentes |
+| `pnpm db:seed` | Seed idempotente |
+| `pnpm keys:generate` | Novo par de chaves RS256 |
+| `pnpm lint` / `pnpm format` | ESLint e Prettier |
+
+## Organização
+
+```
+src/
+├── main.ts · worker.ts · seed.ts
+├── contexts/<contexto>/
+│   ├── domain/           # agregados, objectos de valor, regras puras (sem NestJS nem Prisma)
+│   ├── application/      # casos de uso (uma classe com execute) e serviços de consulta
+│   ├── infrastructure/   # repositórios, adaptadores, PDF, formatos bancários
+│   ├── presentation/     # controllers REST com DTO Zod e anotações Swagger
+│   └── public/           # fachada usada pelos outros contextos
+├── worker/               # processadores BullMQ e projector de notificações
+└── shared/               # domínio, aplicação, infra-estrutura e apresentação transversais
 ```
 
-## Deployment
+Cada pedido corre numa transacção com `app.tenant_id` definido e o papel `pagador_app`, por isso o PostgreSQL filtra todas as consultas pelo tenant, mesmo que um repositório se esqueça do filtro. As alterações escrevem na mesma transacção o registo de auditoria (encadeado por hash; verificável em `GET /v1/audit-logs/verify`) e os eventos da outbox.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Os erros seguem o formato *Problem Details* (RFC 9457), com um `code` estável que o frontend traduz.
