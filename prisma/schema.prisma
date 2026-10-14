@@ -1,12 +1,9 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// pagador.ao — data model (docs/06-modelo-de-dados.md).
+// Conventions: snake_case tables and columns, UUID v7 ids, money as Decimal(18,2),
+// tenant_id on every business table (isolated by PostgreSQL Row-Level Security).
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
 datasource db {
@@ -14,165 +11,1445 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model user {
-  id            String                 @id @default(uuid())
-  first_name    String
-  last_name     String
-  email         String                 @unique
-  phone_number  String                 @unique
-  password_hash String
-  role          user_role              @default(EMPLOYEE)
-  department_id String?
-  position_id   String?
-  salary        salary?
-  evaluations   evaluation[]           @relation("UserEvaluations")
-  leaves        leave[]
-  trainings     training_participant[]
-  created_at    DateTime               @default(now())
-  updated_at    DateTime               @updatedAt
+// ─────────────────────────────────────────────────────────────────────────────
+// Identity & access (global tables: not tenant-isolated)
+// ─────────────────────────────────────────────────────────────────────────────
 
-  department department?  @relation(fields: [department_id], references: [id])
-  position   position?    @relation(fields: [position_id], references: [id])
-  reviews    evaluation[] @relation("Reviewer")
-}
-
-enum user_role {
-  ADMIN
+enum Role {
+  ACCOUNT_ADMIN
   HR_MANAGER
+  HR_TECHNICIAN
+  PAYROLL_PROCESSOR
+  FINANCIAL_APPROVER
+  LINE_MANAGER
+  RECRUITER
   EMPLOYEE
+  AUDITOR
 }
 
-model department {
-  id          String        @id @default(uuid())
-  name        String        @unique
-  description String?
-  users       user[]
-  positions   position[]
-  created_at  DateTime      @default(now())
-  updated_at  DateTime      @updatedAt
-  job_posting job_posting[]
+enum UserStatus {
+  ACTIVE
+  LOCKED
+  DISABLED
 }
 
-model position {
-  id            String   @id @default(uuid())
-  title         String
-  description   String?
-  department_id String
-  users         user[]
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+model Tenant {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  name      String
+  plan      String   @default("PROFESSIONAL")
+  createdAt DateTime @default(now()) @map("created_at")
 
-  department department @relation(fields: [department_id], references: [id])
+  memberships Membership[]
+  companies   Company[]
+
+  @@map("tenants")
 }
 
-model salary {
-  id           String   @id @default(uuid())
-  user_id      String   @unique
-  base_salary  Int
-  benefits     Int      @default(0)
-  deductions   Int      @default(0)
-  net_salary   Int
-  payment_date DateTime
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+model User {
+  id               String     @id @default(uuid(7)) @db.Uuid
+  name             String
+  email            String?    @unique
+  phone            String?    @unique
+  passwordHash     String?    @map("password_hash")
+  status           UserStatus @default(ACTIVE)
+  failedLogins     Int        @default(0) @map("failed_logins")
+  lockedUntil      DateTime?  @map("locked_until")
+  totpSecret       String?    @map("totp_secret")
+  twoFactorEnabled Boolean    @default(false) @map("two_factor_enabled")
+  lastLoginAt      DateTime?  @map("last_login_at")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
 
-  user user @relation(fields: [user_id], references: [id])
+  memberships   Membership[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
 }
 
-model leave {
-  id         String       @id @default(uuid())
-  user_id    String
-  leave_type leave_type
-  start_date DateTime
-  end_date   DateTime
-  status     leave_status @default(PENDING)
-  reason     String?
-  created_at DateTime     @default(now())
-  updated_at DateTime     @updatedAt
+model Membership {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  companyId  String?   @map("company_id") @db.Uuid
+  employeeId String?   @map("employee_id") @db.Uuid
+  roles      Role[]
+  expiresAt  DateTime? @map("expires_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
 
-  user user @relation(fields: [user_id], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([tenantId, userId])
+  @@map("memberships")
 }
 
-enum leave_type {
-  VACATION
-  SICK
-  MATERNITY
-  PATERNITY
-  UNPAID
+model RefreshToken {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  replacedBy String?   @map("replaced_by") @db.Uuid
+  userAgent  String?   @map("user_agent")
+  ip         String?
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("refresh_tokens")
 }
 
-enum leave_status {
+enum OtpPurpose {
+  LOGIN
+  PASSWORD_RESET
+}
+
+model OneTimeCode {
+  id         String     @id @default(uuid(7)) @db.Uuid
+  identifier String
+  purpose    OtpPurpose
+  codeHash   String     @map("code_hash")
+  attempts   Int        @default(0)
+  expiresAt  DateTime   @map("expires_at")
+  usedAt     DateTime?  @map("used_at")
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  @@index([identifier, purpose])
+  @@map("one_time_codes")
+}
+
+model Invitation {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  email      String
+  roles      Role[]
+  tokenHash  String    @unique @map("token_hash")
+  invitedBy  String    @map("invited_by") @db.Uuid
+  expiresAt  DateTime  @map("expires_at")
+  acceptedAt DateTime? @map("accepted_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@map("invitations")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reference data (global)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Bank {
+  code       String  @id
+  name       String
+  swift      String?
+  fileFormat String  @map("file_format")
+
+  @@map("banks")
+}
+
+model Province {
+  name           String   @id
+  municipalities String[]
+
+  @@map("provinces")
+}
+
+enum LegalTableKind {
+  IRT_GROUP_A
+  SOCIAL_SECURITY
+  MINIMUM_WAGE
+  IRT_EXEMPTIONS
+  OVERTIME_RATES
+  HOLIDAYS
+  CONTRACTOR_WITHHOLDING
+}
+
+/// Versioned legal parameters. tenant_id NULL = global table maintained by pagador.ao.
+model LegalTable {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  tenantId       String?        @map("tenant_id") @db.Uuid
+  kind           LegalTableKind
+  version        String
+  effectiveFrom  DateTime       @map("effective_from") @db.Date
+  effectiveTo    DateTime?      @map("effective_to") @db.Date
+  legalReference String         @map("legal_reference")
+  data           Json
+  approvedBy     String?        @map("approved_by")
+  approvedAt     DateTime?      @map("approved_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  @@index([kind, effectiveFrom])
+  @@map("legal_tables")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Organization
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum CompanySize {
+  MICRO
+  SMALL
+  MEDIUM
+  LARGE
+}
+
+model Company {
+  id                   String      @id @default(uuid(7)) @db.Uuid
+  tenantId             String      @map("tenant_id") @db.Uuid
+  legalName            String      @map("legal_name")
+  tradeName            String      @map("trade_name")
+  nif                  String
+  socialSecurityNumber String?     @map("social_security_number")
+  activityCode         String?     @map("activity_code")
+  sizeClass            CompanySize @default(SMALL) @map("size_class")
+  province             String?
+  address              String?
+  careersSlug          String?     @unique @map("careers_slug")
+  defaultCurrency      String      @default("AOA") @map("default_currency")
+  createdAt            DateTime    @default(now()) @map("created_at")
+  updatedAt            DateTime    @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, nif])
+  @@map("companies")
+}
+
+model Establishment {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  companyId  String    @map("company_id") @db.Uuid
+  name       String
+  province   String?
+  address    String?
+  latitude   Decimal?  @db.Decimal(9, 6)
+  longitude  Decimal?  @db.Decimal(9, 6)
+  geoPunch   Boolean   @default(true) @map("geo_punch")
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@map("establishments")
+}
+
+model CostCenter {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  companyId  String    @map("company_id") @db.Uuid
+  code       String
+  name       String
+  archivedAt DateTime? @map("archived_at")
+
+  @@unique([companyId, code])
+  @@map("cost_centers")
+}
+
+enum OrgUnitKind {
+  DIRECTORATE
+  DEPARTMENT
+  SECTION
+}
+
+model OrgUnit {
+  id             String      @id @default(uuid(7)) @db.Uuid
+  tenantId       String      @map("tenant_id") @db.Uuid
+  companyId      String      @map("company_id") @db.Uuid
+  parentId       String?     @map("parent_id") @db.Uuid
+  kind           OrgUnitKind @default(DEPARTMENT)
+  name           String
+  headEmployeeId String?     @map("head_employee_id") @db.Uuid
+  costCenterId   String?     @map("cost_center_id") @db.Uuid
+  archivedAt     DateTime?   @map("archived_at")
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  @@map("org_units")
+}
+
+model JobPosition {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  companyId  String    @map("company_id") @db.Uuid
+  title      String
+  orgUnitId  String?   @map("org_unit_id") @db.Uuid
+  grade      String?
+  archivedAt DateTime? @map("archived_at")
+
+  @@map("job_positions")
+}
+
+enum ScheduleType {
+  FIXED
+  FLEXIBLE
+  SHIFT
+  ROTATION
+}
+
+model WorkSchedule {
+  id               String       @id @default(uuid(7)) @db.Uuid
+  tenantId         String       @map("tenant_id") @db.Uuid
+  companyId        String       @map("company_id") @db.Uuid
+  name             String
+  type             ScheduleType @default(FIXED)
+  weeklyHours      Decimal      @default(44) @map("weekly_hours") @db.Decimal(5, 2)
+  startTime        String?      @map("start_time")
+  endTime          String?      @map("end_time")
+  days             String[]
+  toleranceMinutes Int          @default(10) @map("tolerance_minutes")
+  archivedAt       DateTime?    @map("archived_at")
+
+  @@map("work_schedules")
+}
+
+enum ShiftKind {
+  MORNING
+  AFTERNOON
+  NIGHT
+  OFF
+}
+
+model ShiftAssignment {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  employeeId String    @map("employee_id") @db.Uuid
+  date       DateTime  @db.Date
+  shift      ShiftKind
+
+  @@unique([employeeId, date])
+  @@map("shift_assignments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Workforce
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum EmployeeStatus {
+  ACTIVE
+  PROBATION
+  ON_LEAVE
+  SUSPENDED
+  TERMINATED
+}
+
+enum Gender {
+  FEMALE
+  MALE
+}
+
+enum IdDocumentType {
+  BI
+  PASSPORT
+  RESIDENT_CARD
+}
+
+model Employee {
+  id                   String         @id @default(uuid(7)) @db.Uuid
+  tenantId             String         @map("tenant_id") @db.Uuid
+  companyId            String         @map("company_id") @db.Uuid
+  employeeNumber       String         @map("employee_number")
+  fullName             String         @map("full_name")
+  gender               Gender?
+  birthDate            DateTime?      @map("birth_date") @db.Date
+  maritalStatus        String?        @map("marital_status")
+  nationality          String         @default("AO")
+  idDocumentType       IdDocumentType @default(BI) @map("id_document_type")
+  idDocumentNumber     String?        @map("id_document_number")
+  idDocumentExpiry     DateTime?      @map("id_document_expiry") @db.Date
+  nif                  String?
+  socialSecurityNumber String?        @map("social_security_number")
+  phone                String?
+  email                String?
+  province             String?
+  municipality         String?
+  address              String?
+  hireDate             DateTime       @map("hire_date") @db.Date
+  seniorityDate        DateTime?      @map("seniority_date") @db.Date
+  status               EmployeeStatus @default(ACTIVE)
+  positionId           String?        @map("position_id") @db.Uuid
+  orgUnitId            String?        @map("org_unit_id") @db.Uuid
+  establishmentId      String?        @map("establishment_id") @db.Uuid
+  costCenterId         String?        @map("cost_center_id") @db.Uuid
+  managerId            String?        @map("manager_id") @db.Uuid
+  scheduleId           String?        @map("schedule_id") @db.Uuid
+  dependents           Int            @default(0)
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
+
+  contracts    EmploymentContract[]
+  bankAccounts BankAccount[]
+  documents    EmployeeDocument[]
+
+  @@unique([companyId, employeeNumber])
+  @@index([tenantId, status])
+  @@map("employees")
+}
+
+enum ContractType {
+  INDEFINITE
+  FIXED_TERM
+  UNCERTAIN_TERM
+  PART_TIME
+  INTERNSHIP
+  TEMPORARY
+  NON_RESIDENT
+}
+
+enum ContractStatus {
+  DRAFT
+  ACTIVE
+  ENDED
+  TERMINATED
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  CASH
+  MOBILE_WALLET
+  CHEQUE
+}
+
+model EmploymentContract {
+  id               String         @id @default(uuid(7)) @db.Uuid
+  tenantId         String         @map("tenant_id") @db.Uuid
+  employeeId       String         @map("employee_id") @db.Uuid
+  contractType     ContractType   @map("contract_type")
+  status           ContractStatus @default(ACTIVE)
+  startDate        DateTime       @map("start_date") @db.Date
+  endDate          DateTime?      @map("end_date") @db.Date
+  probationEndDate DateTime?      @map("probation_end_date") @db.Date
+  renewalsCount    Int            @default(0) @map("renewals_count")
+  positionId       String?        @map("position_id") @db.Uuid
+  baseSalary       Decimal        @map("base_salary") @db.Decimal(18, 2)
+  currency         String         @default("AOA")
+  weeklyHours      Decimal        @default(44) @map("weekly_hours") @db.Decimal(5, 2)
+  paymentMethod    PaymentMethod  @default(BANK_TRANSFER) @map("payment_method")
+  terminationDate  DateTime?      @map("termination_date") @db.Date
+  notes            String?
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  employee Employee          @relation(fields: [employeeId], references: [id])
+  payItems ContractPayItem[]
+
+  @@index([tenantId, endDate])
+  @@map("employment_contracts")
+}
+
+model BankAccount {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  employeeId   String    @map("employee_id") @db.Uuid
+  bankCode     String    @map("bank_code")
+  iban         String
+  holderName   String    @map("holder_name")
+  splitPercent Int       @default(100) @map("split_percent")
+  isPrimary    Boolean   @default(true) @map("is_primary")
+  validatedAt  DateTime? @map("validated_at")
+  changedAt    DateTime  @default(now()) @map("changed_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("bank_accounts")
+}
+
+model EmployeeDocument {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  employeeId  String    @map("employee_id") @db.Uuid
+  category    String
+  fileName    String    @map("file_name")
+  contentType String    @map("content_type")
+  size        Int
+  storageKey  String    @map("storage_key")
+  expiresAt   DateTime? @map("expires_at") @db.Date
+  uploadedBy  String?   @map("uploaded_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("employee_documents")
+}
+
+enum TerminationReason {
+  CONTRACT_EXPIRY
+  EMPLOYEE_RESIGNATION
+  DISCIPLINARY_DISMISSAL
+  OBJECTIVE_DISMISSAL
+  MUTUAL_AGREEMENT
+  RETIREMENT
+  DEATH
+}
+
+enum TerminationStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+model Termination {
+  id              String            @id @default(uuid(7)) @db.Uuid
+  tenantId        String            @map("tenant_id") @db.Uuid
+  employeeId      String            @map("employee_id") @db.Uuid
+  reason          TerminationReason
+  noticeDate      DateTime          @map("notice_date") @db.Date
+  lastDay         DateTime          @map("last_day") @db.Date
+  settlement      Json?
+  settlementTotal Decimal?          @map("settlement_total") @db.Decimal(18, 2)
+  status          TerminationStatus @default(PENDING_APPROVAL)
+  notes           String?
+  createdBy       String            @map("created_by") @db.Uuid
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  @@map("terminations")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Time: attendance, leave, overtime, timesheets
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum PunchType {
+  IN
+  OUT
+}
+
+enum PunchSource {
+  WEB
+  KIOSK
+  BIOMETRIC
+  MANUAL
+  API
+}
+
+model AttendanceRecord {
+  id             String      @id @default(uuid(7)) @db.Uuid
+  tenantId       String      @map("tenant_id") @db.Uuid
+  employeeId     String      @map("employee_id") @db.Uuid
+  timestamp      DateTime
+  type           PunchType
+  source         PunchSource
+  latitude       Decimal?    @db.Decimal(9, 6)
+  longitude      Decimal?    @db.Decimal(9, 6)
+  userAgent      String?     @map("user_agent")
+  idempotencyKey String?     @map("idempotency_key")
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([employeeId, timestamp])
+  @@map("attendance_records")
+}
+
+enum RequestStatus {
+  DRAFT
   PENDING
   APPROVED
   REJECTED
+  RETURNED
+  CANCELLED
 }
 
-model job_posting {
-  id            String            @id @default(uuid())
-  title         String
+model AttendanceCorrection {
+  id         String        @id @default(uuid(7)) @db.Uuid
+  tenantId   String        @map("tenant_id") @db.Uuid
+  employeeId String        @map("employee_id") @db.Uuid
+  date       DateTime      @db.Date
+  type       PunchType
+  time       String
+  reason     String
+  status     RequestStatus @default(PENDING)
+  createdAt  DateTime      @default(now()) @map("created_at")
+
+  @@map("attendance_corrections")
+}
+
+model AttendancePeriod {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  companyId String    @map("company_id") @db.Uuid
+  year      Int
+  month     Int
+  closedAt  DateTime? @map("closed_at")
+  closedBy  String?   @map("closed_by") @db.Uuid
+  summary   Json?
+
+  @@unique([companyId, year, month])
+  @@map("attendance_periods")
+}
+
+enum LeaveType {
+  VACATION
+  SICK
+  MARRIAGE
+  BEREAVEMENT
+  MATERNITY
+  PATERNITY
+  UNPAID
+  UNJUSTIFIED
+  OTHER_JUSTIFIED
+}
+
+model LeaveRequest {
+  id         String        @id @default(uuid(7)) @db.Uuid
+  tenantId   String        @map("tenant_id") @db.Uuid
+  employeeId String        @map("employee_id") @db.Uuid
+  type       LeaveType
+  startDate  DateTime      @map("start_date") @db.Date
+  endDate    DateTime      @map("end_date") @db.Date
+  days       Int
+  justified  Boolean       @default(true)
+  paid       Boolean       @default(true)
+  reason     String?
+  documentId String?       @map("document_id") @db.Uuid
+  status     RequestStatus @default(PENDING)
+  createdBy  String?       @map("created_by") @db.Uuid
+  createdAt  DateTime      @default(now()) @map("created_at")
+
+  @@index([tenantId, status])
+  @@map("leave_requests")
+}
+
+model LeaveBalance {
+  id           String @id @default(uuid(7)) @db.Uuid
+  tenantId     String @map("tenant_id") @db.Uuid
+  employeeId   String @map("employee_id") @db.Uuid
+  year         Int
+  entitledDays Int    @default(22) @map("entitled_days")
+  carriedOver  Int    @default(0) @map("carried_over")
+  taken        Int    @default(0)
+  scheduled    Int    @default(0)
+
+  @@unique([employeeId, year])
+  @@map("leave_balances")
+}
+
+enum OvertimeKind {
+  WEEKDAY
+  REST_DAY
+  HOLIDAY
+  NIGHT
+}
+
+model OvertimeRequest {
+  id         String        @id @default(uuid(7)) @db.Uuid
+  tenantId   String        @map("tenant_id") @db.Uuid
+  employeeId String        @map("employee_id") @db.Uuid
+  date       DateTime      @db.Date
+  minutes    Int
+  kind       OvertimeKind
+  reason     String
+  status     RequestStatus @default(PENDING)
+  createdAt  DateTime      @default(now()) @map("created_at")
+
+  @@map("overtime_requests")
+}
+
+model Timesheet {
+  id         String        @id @default(uuid(7)) @db.Uuid
+  tenantId   String        @map("tenant_id") @db.Uuid
+  employeeId String        @map("employee_id") @db.Uuid
+  weekStart  DateTime      @map("week_start") @db.Date
+  project    String
+  hours      Decimal       @db.Decimal(5, 2)
+  notes      String?
+  status     RequestStatus @default(PENDING)
+  createdAt  DateTime      @default(now()) @map("created_at")
+
+  @@map("timesheets")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Approvals (doc 05, 5.5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ApprovalType {
+  LEAVE
+  OVERTIME
+  ADVANCE
+  LOAN
+  EXPENSE
+  SALARY_CHANGE
+  PAYROLL_RUN
+  PAYMENT_BATCH
+  TERMINATION
+  ATTENDANCE_CORRECTION
+  TIMESHEET
+}
+
+model ApprovalWorkflow {
+  id       String       @id @default(uuid(7)) @db.Uuid
+  tenantId String       @map("tenant_id") @db.Uuid
+  type     ApprovalType
+  /// Ordered steps: [{ approver: "LINE_MANAGER" | Role, rule: "ANY" | "ALL", slaHours }]
+  steps    Json
+
+  @@unique([tenantId, type])
+  @@map("approval_workflows")
+}
+
+model ApprovalRequest {
+  id              String        @id @default(uuid(7)) @db.Uuid
+  tenantId        String        @map("tenant_id") @db.Uuid
+  type            ApprovalType
+  subjectId       String        @map("subject_id") @db.Uuid
+  title           String
+  detail          String?
+  requesterUserId String?       @map("requester_user_id") @db.Uuid
+  beneficiaryId   String?       @map("beneficiary_employee_id") @db.Uuid
+  /// Snapshot at request time, so approvals never read workforce tables.
+  beneficiaryName String?       @map("beneficiary_name")
+  beneficiaryManagerId String?  @map("beneficiary_manager_id") @db.Uuid
+  /// Users that may never approve this request (segregation of duties).
+  excludedUserIds String[]      @map("excluded_user_ids")
+  steps           Json
+  currentStep     Int           @default(0) @map("current_step")
+  status          RequestStatus @default(PENDING)
+  dueAt           DateTime?     @map("due_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  decidedAt       DateTime?     @map("decided_at")
+
+  actions ApprovalAction[]
+
+  @@index([tenantId, status])
+  @@map("approval_requests")
+}
+
+model ApprovalAction {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  requestId   String   @map("request_id") @db.Uuid
+  step        Int
+  actorUserId String   @map("actor_user_id") @db.Uuid
+  decision    String
+  reason      String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  request ApprovalRequest @relation(fields: [requestId], references: [id])
+
+  @@map("approval_actions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Payroll (doc 04)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum PayItemKind {
+  EARNING
+  DEDUCTION
+  EMPLOYER_CHARGE
+  INFORMATIVE
+}
+
+enum PayItemNature {
+  FIXED
+  VARIABLE
+  CALCULATED
+}
+
+enum PayItemCategory {
+  SALARY
+  ALLOWANCE
+  BENEFIT
+  INSURANCE
+  OVERTIME
+  BONUS
+  STATUTORY
+  ABSENCE
+  LOAN
+  OTHER
+}
+
+model PayItem {
+  id                 String          @id @default(uuid(7)) @db.Uuid
+  tenantId           String          @map("tenant_id") @db.Uuid
+  companyId          String          @map("company_id") @db.Uuid
+  code               String
+  name               String
+  kind               PayItemKind
+  nature             PayItemNature
+  category           PayItemCategory @default(OTHER)
+  formula            String?
+  irtSubject         Boolean         @default(true) @map("irt_subject")
+  irtExemptionLimit  Decimal?        @map("irt_exemption_limit") @db.Decimal(18, 2)
+  ssSubject          Boolean         @default(true) @map("ss_subject")
+  holidayAllowance   Boolean         @default(false) @map("holiday_allowance_base")
+  christmasAllowance Boolean         @default(false) @map("christmas_allowance_base")
+  proportional       Boolean         @default(false)
+  accountingAccount  String?         @map("accounting_account")
+  calculationOrder   Int             @default(100) @map("calculation_order")
+  visibleOnPayslip   Boolean         @default(true) @map("visible_on_payslip")
+  effectiveFrom      DateTime        @default(now()) @map("effective_from") @db.Date
+  effectiveTo        DateTime?       @map("effective_to") @db.Date
+  archivedAt         DateTime?       @map("archived_at")
+
+  @@unique([companyId, code])
+  @@map("pay_items")
+}
+
+model ContractPayItem {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  tenantId   String  @map("tenant_id") @db.Uuid
+  contractId String  @map("contract_id") @db.Uuid
+  payItemId  String  @map("pay_item_id") @db.Uuid
+  amount     Decimal @db.Decimal(18, 2)
+
+  contract EmploymentContract @relation(fields: [contractId], references: [id])
+
+  @@unique([contractId, payItemId])
+  @@map("contract_pay_items")
+}
+
+enum PayrollPeriodStatus {
+  OPEN
+  CLOSED
+}
+
+model PayrollPeriod {
+  id          String              @id @default(uuid(7)) @db.Uuid
+  tenantId    String              @map("tenant_id") @db.Uuid
+  companyId   String              @map("company_id") @db.Uuid
+  year        Int
+  month       Int
+  startDate   DateTime            @map("start_date") @db.Date
+  endDate     DateTime            @map("end_date") @db.Date
+  paymentDate DateTime            @map("payment_date") @db.Date
+  status      PayrollPeriodStatus @default(OPEN)
+
+  runs PayrollRun[]
+
+  @@unique([companyId, year, month])
+  @@map("payroll_periods")
+}
+
+enum PayrollRunType {
+  REGULAR
+  HOLIDAY_ALLOWANCE
+  CHRISTMAS_ALLOWANCE
+  BONUS
+  RETRO
+  SUPPLEMENTARY
+  FINAL_SETTLEMENT
+}
+
+enum PayrollRunStatus {
+  DRAFT
+  CALCULATED
+  REVIEW
+  APPROVED
+  PAID
+  CLOSED
+}
+
+model PayrollRun {
+  id                  String           @id @default(uuid(7)) @db.Uuid
+  tenantId            String           @map("tenant_id") @db.Uuid
+  companyId           String           @map("company_id") @db.Uuid
+  periodId            String           @map("period_id") @db.Uuid
+  runType             PayrollRunType   @default(REGULAR) @map("run_type")
+  status              PayrollRunStatus @default(DRAFT)
+  totals              Json?
+  alerts              Json?
+  legalTablesSnapshot Json?            @map("legal_tables_snapshot")
+  calculatedAt        DateTime?        @map("calculated_at")
+  calculatedBy        String?          @map("calculated_by") @db.Uuid
+  submittedAt         DateTime?        @map("submitted_at")
+  approvedAt          DateTime?        @map("approved_at")
+  approvedBy          String?          @map("approved_by") @db.Uuid
+  paidAt              DateTime?        @map("paid_at")
+  closedAt            DateTime?        @map("closed_at")
+  createdAt           DateTime         @default(now()) @map("created_at")
+
+  period   PayrollPeriod @relation(fields: [periodId], references: [id])
+  payslips Payslip[]
+
+  @@map("payroll_runs")
+}
+
+model PayrollVariable {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  periodId   String   @map("period_id") @db.Uuid
+  employeeId String   @map("employee_id") @db.Uuid
+  payItemId  String   @map("pay_item_id") @db.Uuid
+  quantity   Decimal? @db.Decimal(10, 2)
+  amount     Decimal? @db.Decimal(18, 2)
+  notes      String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("payroll_variables")
+}
+
+model Payslip {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  runId            String    @map("run_id") @db.Uuid
+  employeeId       String    @map("employee_id") @db.Uuid
+  contractId       String    @map("contract_id") @db.Uuid
+  gross            Decimal   @db.Decimal(18, 2)
+  ssBase           Decimal   @map("ss_base") @db.Decimal(18, 2)
+  ssEmployee       Decimal   @map("ss_employee") @db.Decimal(18, 2)
+  ssEmployer       Decimal   @map("ss_employer") @db.Decimal(18, 2)
+  irtTaxable       Decimal   @map("irt_taxable") @db.Decimal(18, 2)
+  irtBase          Decimal   @map("irt_base") @db.Decimal(18, 2)
+  irt              Decimal   @db.Decimal(18, 2)
+  totalDeductions  Decimal   @map("total_deductions") @db.Decimal(18, 2)
+  net              Decimal   @db.Decimal(18, 2)
+  employerCost     Decimal   @map("employer_cost") @db.Decimal(18, 2)
+  currency         String    @default("AOA")
+  alerts           Json?
+  calculationTrace Json      @map("calculation_trace")
+  sentAt           DateTime? @map("sent_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  run   PayrollRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  lines PayslipLine[]
+
+  @@unique([runId, employeeId])
+  @@map("payslips")
+}
+
+model PayslipLine {
+  id            String      @id @default(uuid(7)) @db.Uuid
+  tenantId      String      @map("tenant_id") @db.Uuid
+  payslipId     String      @map("payslip_id") @db.Uuid
+  code          String
   description   String
-  department_id String?
-  is_active     Boolean           @default(true)
-  posted_at     DateTime          @default(now())
-  applications  job_application[]
-  created_at    DateTime          @default(now())
-  updated_at    DateTime          @updatedAt
+  kind          PayItemKind
+  quantity      Decimal?    @db.Decimal(10, 2)
+  amount        Decimal     @db.Decimal(18, 2)
+  taxableAmount Decimal     @map("taxable_amount") @db.Decimal(18, 2)
+  ssAmount      Decimal     @map("ss_amount") @db.Decimal(18, 2)
+  source        String
+  trace         String
 
-  department department? @relation(fields: [department_id], references: [id])
+  payslip Payslip @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+
+  @@map("payslip_lines")
 }
 
-model job_application {
-  id             String             @id @default(uuid())
-  job_posting_id String
-  full_name      String
-  email          String
-  phone_number   String
-  resume_url     String?
-  status         application_status @default(RECEIVED)
-  applied_at     DateTime           @default(now())
-
-  job_posting job_posting @relation(fields: [job_posting_id], references: [id])
+enum LoanType {
+  ADVANCE
+  LOAN
+  GARNISHMENT
 }
 
-enum application_status {
-  RECEIVED
-  IN_REVIEW
-  INTERVIEW
+enum LoanStatus {
+  PENDING
+  ACTIVE
+  SETTLED
   REJECTED
+}
+
+model Loan {
+  id               String     @id @default(uuid(7)) @db.Uuid
+  tenantId         String     @map("tenant_id") @db.Uuid
+  employeeId       String     @map("employee_id") @db.Uuid
+  type             LoanType
+  principal        Decimal    @db.Decimal(18, 2)
+  installments     Int
+  installmentValue Decimal    @map("installment_value") @db.Decimal(18, 2)
+  paidInstallments Int        @default(0) @map("paid_installments")
+  balance          Decimal    @db.Decimal(18, 2)
+  firstMonth       DateTime   @map("first_month") @db.Date
+  status           LoanStatus @default(PENDING)
+  notes            String?
+  createdAt        DateTime   @default(now()) @map("created_at")
+
+  @@map("loans")
+}
+
+enum ExpenseCategory {
+  TRAVEL
+  PER_DIEM
+  FUEL
+  MATERIAL
+  REPRESENTATION
+  OTHER
+}
+
+model ExpenseClaim {
+  id          String          @id @default(uuid(7)) @db.Uuid
+  tenantId    String          @map("tenant_id") @db.Uuid
+  employeeId  String          @map("employee_id") @db.Uuid
+  category    ExpenseCategory
+  description String
+  amount      Decimal         @db.Decimal(18, 2)
+  date        DateTime        @db.Date
+  receiptKey  String?         @map("receipt_key")
+  status      RequestStatus   @default(PENDING)
+  paidInRunId String?         @map("paid_in_run_id") @db.Uuid
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  @@map("expense_claims")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Payments
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum BatchStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SENT
+  RECONCILED
+  PARTIALLY_REJECTED
+}
+
+enum InstructionStatus {
+  PENDING
+  SENT
+  PAID
+  REJECTED
+}
+
+model PaymentBatch {
+  id          String      @id @default(uuid(7)) @db.Uuid
+  tenantId    String      @map("tenant_id") @db.Uuid
+  runId       String      @map("run_id") @db.Uuid
+  bankCode    String      @map("bank_code")
+  fileFormat  String      @map("file_format")
+  reference   String
+  totalAmount Decimal     @map("total_amount") @db.Decimal(18, 2)
+  status      BatchStatus @default(PENDING_APPROVAL)
+  preparedBy  String      @map("prepared_by") @db.Uuid
+  approvedBy  String?     @map("approved_by") @db.Uuid
+  approvedAt  DateTime?   @map("approved_at")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  instructions PaymentInstruction[]
+
+  @@unique([tenantId, reference])
+  @@map("payment_batches")
+}
+
+model PaymentInstruction {
+  id              String            @id @default(uuid(7)) @db.Uuid
+  tenantId        String            @map("tenant_id") @db.Uuid
+  batchId         String            @map("batch_id") @db.Uuid
+  payslipId       String            @map("payslip_id") @db.Uuid
+  employeeName    String            @map("employee_name")
+  iban            String
+  amount          Decimal           @db.Decimal(18, 2)
+  status          InstructionStatus @default(PENDING)
+  rejectionReason String?           @map("rejection_reason")
+
+  batch PaymentBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@map("payment_instructions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tax & social security filings
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum Authority {
+  AGT
+  INSS
+}
+
+enum FilingKind {
+  IRT_WITHHOLDING
+  SS_REMUNERATION
+  CONTRACTOR_WITHHOLDING
+  ANNUAL_INCOME
+}
+
+enum FilingStatus {
+  READY
+  SUBMITTED
+  PAID
+}
+
+model TaxFiling {
+  id          String       @id @default(uuid(7)) @db.Uuid
+  tenantId    String       @map("tenant_id") @db.Uuid
+  companyId   String       @map("company_id") @db.Uuid
+  authority   Authority
+  kind        FilingKind
+  year        Int
+  month       Int
+  dueDate     DateTime     @map("due_date") @db.Date
+  amount      Decimal      @db.Decimal(18, 2)
+  lines       Json
+  status      FilingStatus @default(READY)
+  submittedAt DateTime?    @map("submitted_at")
+  paidAt      DateTime?    @map("paid_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  @@unique([companyId, kind, year, month])
+  @@map("tax_filings")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Contractors (M23)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum InvoiceStatus {
+  PENDING
+  APPROVED
+  PAID
+  REJECTED
+}
+
+model ContractorInvoice {
+  id          String        @id @default(uuid(7)) @db.Uuid
+  tenantId    String        @map("tenant_id") @db.Uuid
+  companyId   String        @map("company_id") @db.Uuid
+  supplier    String
+  supplierNif String?       @map("supplier_nif")
+  number      String
+  description String?
+  dueDate     DateTime      @map("due_date") @db.Date
+  amount      Decimal       @db.Decimal(18, 2)
+  withholding Decimal       @db.Decimal(18, 2)
+  fileKey     String?       @map("file_key")
+  status      InvoiceStatus @default(PENDING)
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  @@map("contractor_invoices")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Recruitment
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum JobStatus {
+  DRAFT
+  OPEN
+  PAUSED
+  CLOSED
+}
+
+enum CandidateStage {
+  APPLIED
+  SCREENING
+  INTERVIEW
+  TEST
+  OFFER
   HIRED
+  REJECTED
 }
 
-model evaluation {
-  id          String   @id @default(uuid())
-  user_id     String
-  reviewer_id String
-  score       Int
+model JobOpening {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  companyId       String    @map("company_id") @db.Uuid
+  title           String
+  orgUnitId       String?   @map("org_unit_id") @db.Uuid
+  establishmentId String?   @map("establishment_id") @db.Uuid
+  location        String
+  workRegime      String    @map("work_regime")
+  openings        Int       @default(1)
+  description     String
+  status          JobStatus @default(OPEN)
+  publishedAt     DateTime? @map("published_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@map("job_openings")
+}
+
+model Candidate {
+  id          String         @id @default(uuid(7)) @db.Uuid
+  tenantId    String         @map("tenant_id") @db.Uuid
+  jobId       String         @map("job_id") @db.Uuid
+  name        String
+  email       String
+  phone       String?
+  cvKey       String?        @map("cv_key")
+  stage       CandidateStage @default(APPLIED)
+  score       Int?
+  notes       String?
+  consentAt   DateTime       @map("consent_at")
+  interviewAt DateTime?      @map("interview_at")
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  @@map("candidates")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Talent: performance, feedback, training
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum CycleStatus {
+  SCHEDULED
+  ACTIVE
+  CLOSED
+}
+
+model ReviewCycle {
+  id             String      @id @default(uuid(7)) @db.Uuid
+  tenantId       String      @map("tenant_id") @db.Uuid
+  companyId      String      @map("company_id") @db.Uuid
+  name           String
+  startDate      DateTime    @map("start_date") @db.Date
+  endDate        DateTime    @map("end_date") @db.Date
+  selfAssessment Boolean     @default(true) @map("self_assessment")
+  status         CycleStatus @default(SCHEDULED)
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  @@map("review_cycles")
+}
+
+model PerformanceReview {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  cycleId     String    @map("cycle_id") @db.Uuid
+  employeeId  String    @map("employee_id") @db.Uuid
+  reviewerId  String?   @map("reviewer_id") @db.Uuid
+  performance Int?
+  potential   Int?
   comments    String?
-  review_date DateTime
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  completedAt DateTime? @map("completed_at")
 
-  user     user @relation("UserEvaluations", fields: [user_id], references: [id])
-  reviewer user @relation("Reviewer", fields: [reviewer_id], references: [id])
+  @@unique([cycleId, employeeId])
+  @@map("performance_reviews")
 }
 
-model training {
-  id           String                 @id @default(uuid())
-  title        String
-  description  String?
-  start_date   DateTime
-  end_date     DateTime
-  participants training_participant[]
-  created_at   DateTime               @default(now())
-  updated_at   DateTime               @updatedAt
+model Goal {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  employeeId String   @map("employee_id") @db.Uuid
+  title      String
+  progress   Int      @default(0)
+  dueDate    DateTime @map("due_date") @db.Date
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("goals")
 }
 
-model training_participant {
-  id          String  @id @default(uuid())
-  training_id String
-  user_id     String
-  attended    Boolean @default(false)
+model Feedback {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  fromEmployeeId String?  @map("from_employee_id") @db.Uuid
+  fromUserId     String   @map("from_user_id") @db.Uuid
+  toEmployeeId   String   @map("to_employee_id") @db.Uuid
+  kind           String
+  value          String?
+  message        String
+  isPublic       Boolean  @default(true) @map("is_public")
+  createdAt      DateTime @default(now()) @map("created_at")
 
-  training training @relation(fields: [training_id], references: [id])
-  user     user     @relation(fields: [user_id], references: [id])
+  @@map("feedback")
+}
+
+model Training {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  title     String
+  provider  String
+  date      DateTime @db.Date
+  hours     Int
+  seats     Int
+  mandatory Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  enrollments TrainingEnrollment[]
+
+  @@map("trainings")
+}
+
+model TrainingEnrollment {
+  id                   String    @id @default(uuid(7)) @db.Uuid
+  tenantId             String    @map("tenant_id") @db.Uuid
+  trainingId           String    @map("training_id") @db.Uuid
+  employeeId           String    @map("employee_id") @db.Uuid
+  attended             Boolean   @default(false)
+  certificateExpiresAt DateTime? @map("certificate_expires_at") @db.Date
+
+  training Training @relation(fields: [trainingId], references: [id], onDelete: Cascade)
+
+  @@unique([trainingId, employeeId])
+  @@map("training_enrollments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Employee relations: discipline and occupational safety
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum CaseStatus {
+  OPEN
+  CLOSED
+}
+
+model DisciplinaryCase {
+  id           String     @id @default(uuid(7)) @db.Uuid
+  tenantId     String     @map("tenant_id") @db.Uuid
+  reference    String
+  employeeId   String     @map("employee_id") @db.Uuid
+  instructorId String?    @map("instructor_id") @db.Uuid
+  infraction   String
+  facts        String
+  incidentDate DateTime   @map("incident_date") @db.Date
+  stage        String     @default("Nota de culpa")
+  deadline     DateTime?  @db.Date
+  decision     String?
+  status       CaseStatus @default(OPEN)
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@unique([tenantId, reference])
+  @@map("disciplinary_cases")
+}
+
+model MedicalExam {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  employeeId String    @map("employee_id") @db.Uuid
+  kind       String
+  dueDate    DateTime  @map("due_date") @db.Date
+  doneAt     DateTime? @map("done_at") @db.Date
+  result     String?
+
+  @@map("medical_exams")
+}
+
+enum AccidentSeverity {
+  MINOR
+  MODERATE
+  SEVERE
+}
+
+model Accident {
+  id          String           @id @default(uuid(7)) @db.Uuid
+  tenantId    String           @map("tenant_id") @db.Uuid
+  employeeId  String           @map("employee_id") @db.Uuid
+  date        DateTime         @db.Date
+  location    String
+  severity    AccidentSeverity
+  daysLost    Int              @default(0) @map("days_lost")
+  description String
+  reportedAt  DateTime?        @map("reported_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  @@map("accidents")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Communication
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum NotificationKind {
+  ALERT
+  DEADLINE
+  INFO
+  SUCCESS
+}
+
+model Notification {
+  id        String           @id @default(uuid(7)) @db.Uuid
+  tenantId  String           @map("tenant_id") @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  kind      NotificationKind
+  title     String
+  body      String
+  href      String?
+  readAt    DateTime?        @map("read_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  @@index([userId, readAt])
+  @@map("notifications")
+}
+
+model Conversation {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  title     String?
+  isGroup   Boolean  @default(false) @map("is_group")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  conversationId String    @map("conversation_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  lastReadAt     DateTime? @map("last_read_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@map("conversation_participants")
+}
+
+model Message {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  authorUserId   String   @map("author_user_id") @db.Uuid
+  body           String
+  attachmentKey  String?  @map("attachment_key")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+model Announcement {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  title     String
+  body      String
+  audience  String
+  sms       Boolean  @default(false)
+  authorId  String   @map("author_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("announcements")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reports, audit and outbox
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SavedReport {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  name      String
+  source    String
+  groupBy   String?  @map("group_by")
+  schedule  String?
+  createdBy String   @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("saved_reports")
+}
+
+/// Append-only, hash-chained (UPDATE/DELETE blocked by a trigger).
+model AuditLog {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  actorName   String?  @map("actor_name")
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String?  @map("entity_id")
+  before      Json?
+  after       Json?
+  sensitive   Boolean  @default(false)
+  ip          String?
+  userAgent   String?  @map("user_agent")
+  prevHash    String?  @map("prev_hash")
+  hash        String
+  occurredAt  DateTime @default(now()) @map("occurred_at")
+
+  @@index([tenantId, occurredAt])
+  @@map("audit_logs")
+}
+
+/// Transactional outbox: integration events written with the change, published by the worker.
+model OutboxEvent {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  type        String
+  payload     Json
+  occurredAt  DateTime  @default(now()) @map("occurred_at")
+  publishedAt DateTime? @map("published_at")
+  attempts    Int       @default(0)
+
+  @@index([publishedAt])
+  @@map("outbox_events")
 }

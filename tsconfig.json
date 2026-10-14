@@ -15,21 +15,17 @@
     "outDir": "./dist",
     "incremental": true,
     "skipLibCheck": true,
-    "strictNullChecks": true,
     "forceConsistentCasingInFileNames": true,
-    "noImplicitAny": false,
-    "strictBindCallApply": false,
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
     "noFallthroughCasesInSwitch": false,
     "baseUrl": ".",
     "paths": {
       "@/*": [
-        "src/*",
-        "generated/*"
-      ],
-      "*": [
-        "node_modules/*",
-        "src/types/*"
+        "src/*"
       ]
-    }
+    },
+    "strict": true,
+    "strictPropertyInitialization": false
   }
 }
