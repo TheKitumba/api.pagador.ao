@@ -101,9 +101,16 @@ export class AuthController {
   @ApiOperation({ summary: 'Renovar a sessão', description: 'Usa o cookie `refresh_token` (rotativo). Reutilizar um token já usado termina todas as sessões do utilizador.' })
   @ApiOkResponse({ type: SessionUserDto })
   async refresh(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
-    const session = await this.refreshSession.execute((request.cookies as Record<string, string>)[REFRESH_COOKIE], info(request));
-    this.cookies.set(response, session);
-    return session.user;
+    try {
+      const session = await this.refreshSession.execute((request.cookies as Record<string, string>)[REFRESH_COOKIE], info(request));
+      this.cookies.set(response, session);
+      return session.user;
+    } catch (error) {
+      // A dead session must not leave the session marker behind, or the web app would keep
+      // treating the browser as signed in and bounce between /login and the dashboard.
+      this.cookies.clear(response);
+      throw error;
+    }
   }
 
   @Public()

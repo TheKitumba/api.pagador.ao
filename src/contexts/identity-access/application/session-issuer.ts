@@ -17,6 +17,7 @@ export interface SessionUser {
   employeeId: string | null;
   roles: string[];
   permissions: string[];
+  twoFactorEnabled: boolean;
 }
 
 export interface IssuedSession {
@@ -25,7 +26,7 @@ export interface IssuedSession {
   user: SessionUser;
 }
 
-export function toSessionUser(user: Pick<User, 'id' | 'name' | 'email'>, membership: Membership): SessionUser {
+export function toSessionUser(user: Pick<User, 'id' | 'name' | 'email' | 'twoFactorEnabled'>, membership: Membership): SessionUser {
   return {
     id: user.id,
     name: user.name,
@@ -35,6 +36,7 @@ export function toSessionUser(user: Pick<User, 'id' | 'name' | 'email'>, members
     employeeId: membership.employeeId,
     roles: membership.roles,
     permissions: [...permissionsFor(membership.roles)].sort(),
+    twoFactorEnabled: user.twoFactorEnabled,
   };
 }
 

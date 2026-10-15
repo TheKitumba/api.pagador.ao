@@ -14,6 +14,7 @@ export const sessionUserSchema = z.object({
   employeeId: z.uuid().nullable(),
   roles: z.array(role),
   permissions: z.array(z.string()).describe('Permissões efectivas (para mostrar/ocultar acções na interface)'),
+  twoFactorEnabled: z.boolean(),
 });
 
 export class SessionUserDto extends createZodDto(sessionUserSchema) {}
