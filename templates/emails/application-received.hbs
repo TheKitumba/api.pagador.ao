@@ -1,0 +1,7 @@
+{{#> layout preheader=(concat "Recebemos a sua candidatura para " jobTitle ".") reason=(concat "Recebeu este e-mail porque se candidatou a uma vaga de " companyName ".")}}
+  {{#> callout variant="success"}}<strong>Candidatura recebida</strong>{{/callout}}
+  {{> heading text=jobTitle}}
+  <p style="margin:0 0 16px;">Olá {{name}},</p>
+  <p style="margin:0 0 16px;">Obrigado pelo seu interesse em trabalhar na <strong>{{companyName}}</strong>. Recebemos a sua candidatura e o seu currículo.</p>
+  <p style="margin:0;">A equipa de recrutamento vai analisar o seu perfil. Entraremos em contacto se avançar para a próxima fase.</p>
+{{/layout}}

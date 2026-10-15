@@ -1,0 +1,12 @@
+{{#> layout preheader=(concat "Convite para entrevista: " jobTitle ", " interviewAt ".") reason=(concat "Recebeu este e-mail porque se candidatou a uma vaga de " companyName ".")}}
+  {{#> callout variant="info"}}<strong>Convite para entrevista</strong>{{/callout}}
+  {{> heading text=jobTitle}}
+  <p style="margin:0 0 16px;">Olá {{name}},</p>
+  <p style="margin:0 0 16px;">Gostámos do seu perfil e gostaríamos de o(a) conhecer melhor numa entrevista.</p>
+  {{#> details}}
+    {{> detail label="Empresa" value=companyName}}
+    {{> detail label="Vaga" value=jobTitle}}
+    {{> detail label="Data e hora" value=interviewAt}}
+  {{/details}}
+  <p style="margin:16px 0 0;">Se não puder comparecer, responda a este e-mail para combinarmos outra data.</p>
+{{/layout}}

@@ -4,6 +4,7 @@ import { authorize, can } from '@/shared/application/permissions';
 import { Mailer } from '@/shared/application/ports';
 import { BusinessRuleViolation, ForbiddenError, NotFoundError } from '@/shared/domain/errors';
 import { AuditService } from '@/shared/infrastructure/audit/audit.service';
+import { AppConfig } from '@/shared/infrastructure/config/app-config';
 import { ActorContext } from '@/shared/infrastructure/context/actor-context';
 import { Database } from '@/shared/infrastructure/prisma/database';
 import { decimal, isoDate } from '@/shared/application/formatting';
@@ -18,6 +19,7 @@ export class PayslipsService {
     private readonly actors: ActorContext,
     private readonly mailer: Mailer,
     private readonly audit: AuditService,
+    private readonly config: AppConfig,
   ) {}
 
   /** HR/payroll see every payslip; an employee sees only their own (docs/05, 5.3 "Recibos"). */
@@ -108,7 +110,7 @@ export class PayslipsService {
       totals: { gross: payslip.gross.toFixed(2), ssEmployee: payslip.ssEmployee.toFixed(2), irt: payslip.irt.toFixed(2), totalDeductions: payslip.totalDeductions.toFixed(2), net: payslip.net.toFixed(2) },
       legalTables: Object.values(snapshot).filter(Boolean).join(', '),
     });
-    return { buffer, fileName: `recibo-${employee.employeeNumber}-${payslip.run.period.year}-${String(payslip.run.period.month).padStart(2, '0')}.pdf`, employee };
+    return { buffer, fileName: `recibo-${employee.employeeNumber}-${payslip.run.period.year}-${String(payslip.run.period.month).padStart(2, '0')}.pdf`, employee, company };
   }
 
   /** Sends the payslip PDF by e-mail. Only for approved (or later) runs. */
@@ -117,12 +119,15 @@ export class PayslipsService {
     if (!can(actor, 'payroll.read')) throw new ForbiddenError();
     const payslip = await this.load(id);
     if (!['APPROVED', 'PAID', 'CLOSED'].includes(payslip.run.status)) throw new BusinessRuleViolation('Só pode enviar recibos de folhas aprovadas', 'run_not_approved');
-    const { buffer, fileName, employee } = await this.pdf(id);
+    const { buffer, fileName, employee, company } = await this.pdf(id);
     if (!employee.email) throw new BusinessRuleViolation('O trabalhador não tem e-mail. O recibo está disponível no portal.', 'no_email');
+    const period = runName(payslip.run.runType, payslip.run.period.year, payslip.run.period.month);
+    const paymentDate = payslip.run.period.paymentDate?.toLocaleDateString('pt-AO', { timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric' }) ?? null;
     await this.mailer.send({
       to: employee.email,
-      subject: `Recibo de vencimento — ${runName(payslip.run.runType, payslip.run.period.year, payslip.run.period.month)}`,
-      text: `Olá ${employee.fullName},\n\nSegue em anexo o seu recibo de vencimento. Também o encontra no portal do trabalhador.\n\npagador.ao`,
+      subject: `Recibo de vencimento — ${period}`,
+      template: 'payslip',
+      data: { name: employee.fullName, companyName: company.tradeName, period, paymentDate, portalUrl: `${this.config.env.APP_URL}/me/payslips` },
       attachments: [{ filename: fileName, content: buffer, contentType: 'application/pdf' }],
     });
     await this.db.tx.payslip.update({ where: { id }, data: { sentAt: new Date() } });

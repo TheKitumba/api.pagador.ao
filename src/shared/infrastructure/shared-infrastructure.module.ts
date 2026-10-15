@@ -7,6 +7,7 @@ import { AppConfig } from './config/app-config';
 import { ActorContext } from './context/actor-context';
 import { GmailMailer } from './messaging/gmail-mailer';
 import { LogSmsSender } from './messaging/log-sms-sender';
+import { MailRenderer } from './messaging/mail-renderer';
 import { OutboxService } from './outbox/outbox.service';
 import { Database } from './prisma/database';
 import { PrismaService } from './prisma/prisma.service';
@@ -30,6 +31,7 @@ const config = new AppConfig();
     AuditService,
     OutboxService,
     { provide: FileStorage, useClass: S3FileStorage },
+    MailRenderer,
     { provide: Mailer, useClass: GmailMailer },
     { provide: SmsSender, useClass: LogSmsSender },
   ],

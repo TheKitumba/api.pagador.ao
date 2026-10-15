@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Role } from '@prisma/client';
 
-import { authorize, permissionsFor, ROLE_PERMISSIONS } from '@/shared/application/permissions';
+import { authorize, permissionsFor, ROLE_LABEL, ROLE_PERMISSIONS } from '@/shared/application/permissions';
 import { Mailer } from '@/shared/application/ports';
 import { BusinessRuleViolation, ConflictError, NotFoundError, UnauthorizedError } from '@/shared/domain/errors';
 import { AuditService } from '@/shared/infrastructure/audit/audit.service';
@@ -72,10 +72,18 @@ export class InviteUserUseCase {
       data: { tenantId: actor.tenantId, email, roles: input.roles, tokenHash: sha256(token), invitedBy: actor.userId, expiresAt: new Date(Date.now() + 7 * 86_400_000) },
     });
     await this.audit.record({ action: 'user.invite', entityType: 'invitation', entityId: invitation.id, after: { email, roles: input.roles } });
+    const tenant = await this.db.tx.tenant.findUniqueOrThrow({ where: { id: actor.tenantId }, select: { name: true } });
     await this.mailer.send({
       to: email,
       subject: `${actor.name} convidou-o para o pagador.ao`,
-      text: `Foi convidado(a) para a conta da empresa no pagador.ao com o papel ${input.roles.join(', ')}.\n\nAceite o convite em: ${this.config.env.APP_URL}/accept-invitation?token=${token}\nO convite é válido durante 7 dias.`,
+      template: 'invitation',
+      data: {
+        inviterName: actor.name,
+        companyName: tenant.name,
+        roles: input.roles.map((role) => ROLE_LABEL[role]),
+        acceptUrl: `${this.config.env.APP_URL}/accept-invitation?token=${token}`,
+        validDays: 7,
+      },
     });
     return { id: invitation.id, email, roles: input.roles, expiresAt: invitation.expiresAt };
   }

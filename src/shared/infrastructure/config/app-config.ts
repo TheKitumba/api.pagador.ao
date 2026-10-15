@@ -27,6 +27,7 @@ const envSchema = z.object({
     .default('true')
     .transform((value) => value === 'true'),
   MAIL_FROM: z.string().default('pagador.ao <no-reply@pagador.ao>'),
+  MAIL_TEMPLATES_DIR: z.string().default('templates/emails'),
   GMAIL_USER: z.string().optional(),
   GMAIL_APP_PASSWORD: z.string().optional(),
 });

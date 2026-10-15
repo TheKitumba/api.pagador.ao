@@ -6,6 +6,7 @@ import { authorize } from '@/shared/application/permissions';
 import { FileStorage, Mailer, SmsSender } from '@/shared/application/ports';
 import { ForbiddenError, NotFoundError, ValidationError } from '@/shared/domain/errors';
 import { AuditService } from '@/shared/infrastructure/audit/audit.service';
+import { AppConfig } from '@/shared/infrastructure/config/app-config';
 import { ActorContext } from '@/shared/infrastructure/context/actor-context';
 import { Database } from '@/shared/infrastructure/prisma/database';
 
@@ -24,6 +25,7 @@ export class MessagingService {
     private readonly mailer: Mailer,
     private readonly sms: SmsSender,
     private readonly audit: AuditService,
+    private readonly config: AppConfig,
   ) {}
 
   private async assertParticipant(conversationId: string) {
@@ -119,8 +121,10 @@ export class MessagingService {
     const announcement = await this.db.tx.announcement.create({ data: { ...input, sms: input.sms ?? false, tenantId: actor.tenantId, authorId: actor.userId } });
     const members = await this.db.tx.membership.findMany({ where: { tenantId: actor.tenantId }, include: { user: { select: { email: true, phone: true } } } });
     await this.notifications.notifyUsers(members.map((m) => m.userId), { kind: 'INFO', title: input.title, body: input.body.slice(0, 280), href: '/messages' });
+    const tenant = await this.db.tx.tenant.findUniqueOrThrow({ where: { id: actor.tenantId }, select: { name: true } });
+    const mail = { title: input.title, body: input.body, companyName: tenant.name, authorName: actor.name, messagesUrl: `${this.config.env.APP_URL}/messages` };
     for (const member of members) {
-      if (member.user.email) await this.mailer.send({ to: member.user.email, subject: `Comunicado: ${input.title}`, text: input.body });
+      if (member.user.email) await this.mailer.send({ to: member.user.email, subject: `Comunicado: ${input.title}`, template: 'announcement', data: mail });
       if (input.sms && member.user.phone) await this.sms.send(member.user.phone, `${input.title}: ${input.body}`.slice(0, 300));
     }
     await this.audit.record({ action: 'announcement.publish', entityType: 'announcement', entityId: announcement.id, after: { title: input.title, recipients: members.length } });

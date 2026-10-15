@@ -29,6 +29,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 COPY prisma ./prisma
 RUN pnpm exec prisma generate
 COPY --from=build /app/dist ./dist
+COPY templates ./templates
 USER node
 EXPOSE 3333
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \

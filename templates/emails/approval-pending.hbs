@@ -1,0 +1,9 @@
+{{#> layout preheader=(concat "Um pedido aguarda a sua decisão: " title) reason="Recebeu este e-mail porque é aprovador(a) neste fluxo."}}
+  {{#> callout variant="warning"}}<strong>Aprovação pendente</strong>{{/callout}}
+  {{> heading text=title}}
+  <p style="margin:0 0 16px;">Tem um pedido a aguardar a sua decisão.</p>
+  {{#> details}}
+    {{> detail label="Etapa" value=stepLabel}}
+  {{/details}}
+  {{> button href=approvalsUrl label="Rever pedido"}}
+{{/layout}}

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="pt" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="x-apple-disable-message-reformatting">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
+  <title>{{subject}}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  {{!-- Design tokens from frontend/src/app/globals.css, as hex (e-mail clients do not support CSS variables). --}}
+  <style>
+    body { margin: 0; padding: 0; width: 100% !important; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table { border-collapse: collapse; mso-table-lspace: 0; mso-table-rspace: 0; }
+    img { border: 0; line-height: 100%; outline: none; text-decoration: none; }
+    a { color: #0e4caa; }
+    .tabular { font-variant-numeric: tabular-nums; }
+    @media (max-width: 600px) {
+      .gutter { padding-left: 16px !important; padding-right: 16px !important; }
+      .card-body { padding: 24px 20px !important; }
+    }
+    @media (prefers-color-scheme: dark) {
+      .bg-background { background-color: #0f1115 !important; }
+      .bg-card { background-color: #16181d !important; }
+      .bg-muted { background-color: #22242a !important; }
+      .border { border-color: #292c32 !important; }
+      .text-foreground { color: #f3f4f6 !important; }
+      .text-muted { color: #a6abb5 !important; }
+      .btn-primary { background-color: #3d8df5 !important; border-color: #3d8df5 !important; }
+      .btn-primary a { color: #0c111d !important; }
+      .link { color: #92c0fc !important; }
+      .callout-info { background-color: #1b2637 !important; border-color: #203553 !important; color: #92c0fc !important; }
+      .callout-success { background-color: #1a2d29 !important; border-color: #1f4337 !important; color: #7cdead !important; }
+      .callout-warning { background-color: #312a20 !important; border-color: #4e3d22 !important; color: #fbc760 !important; }
+      .callout-danger { background-color: #2f1f24 !important; border-color: #4a272b !important; color: #f99494 !important; }
+    }
+  </style>
+</head>
+<body class="bg-background" style="margin:0; padding:0; background-color:#f9fafb;">
+  {{#if preheader}}
+  <div data-text-skip style="display:none; max-height:0; overflow:hidden; mso-hide:all; font-size:1px; line-height:1px; color:#f9fafb; opacity:0;">{{preheader}}&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;</div>
+  {{/if}}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-background" style="background-color:#f9fafb;">
+    <tr>
+      <td align="center" class="gutter" style="padding:40px 24px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px; border-collapse:separate; font-family:Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+          {{!-- Brand: same mark as the app header (frontend/src/layouts/auth-layout.tsx). --}}
+          <tr>
+            <td style="padding:0 4px 24px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td data-text-skip width="32" height="32" align="center" valign="middle" style="width:32px; height:32px; border-radius:8px; background-color:#8b5cf6; background-image:linear-gradient(135deg, #38bdf8 0%, #8b5cf6 50%, #d946ef 100%); color:#ffffff; font-size:14px; font-weight:700; line-height:32px;">P</td>
+                  <td data-text-skip class="text-foreground" style="padding-left:10px; font-size:16px; font-weight:600; letter-spacing:-0.01em; color:#111827;">{{appName}}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td class="bg-card border" style="background-color:#ffffff; border:1px solid #e7e9ee; border-radius:14px; box-shadow:0 1px 2px 0 rgba(16,24,40,0.04), 0 1px 3px 0 rgba(16,24,40,0.04);">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td class="card-body text-foreground" style="padding:32px; font-size:15px; line-height:24px; color:#111827;">
+                    {{> @partial-block }}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td class="text-muted" style="padding:24px 4px 0; font-size:12px; line-height:18px; color:#5d6679;">
+              {{#if reason}}<p style="margin:0 0 8px;">{{reason}}</p>{{/if}}
+              <p style="margin:0;">© {{year}} {{appName}} · Recursos humanos e folha de pagamento · Dados alojados em conformidade com a Lei n.º 22/11</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

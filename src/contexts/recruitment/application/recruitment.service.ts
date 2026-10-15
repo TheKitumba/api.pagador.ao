@@ -70,6 +70,13 @@ export class RecruitmentService {
     return candidates.map((candidate) => ({ ...candidate, cvKey: undefined, hasCv: Boolean(candidate.cvKey), job: { id: candidate.jobId, title: titles.get(candidate.jobId) ?? null }, stageLabel: STAGE_LABEL[candidate.stage] }));
   }
 
+  /** Job title and employer name for candidate e-mails. */
+  private async jobForMail(jobId: string) {
+    const job = await this.db.tx.jobOpening.findUniqueOrThrow({ where: { id: jobId }, select: { title: true, companyId: true } });
+    const company = await this.db.tx.company.findUniqueOrThrow({ where: { id: job.companyId }, select: { tradeName: true } });
+    return { jobTitle: job.title, companyName: company.tradeName };
+  }
+
   async updateCandidate(id: string, input: { stage?: CandidateStage; score?: number; notes?: string; interviewAt?: string; reason?: string }) {
     const actor = this.actors.current;
     authorize(actor, 'recruitment.write');
@@ -83,10 +90,13 @@ export class RecruitmentService {
     if (input.stage && input.stage !== candidate.stage) {
       await this.audit.record({ action: 'candidate.stage', entityType: 'candidate', entityId: id, before: { stage: candidate.stage }, after: { stage: input.stage } });
       if (input.stage === 'REJECTED') {
-        await this.mailer.send({ to: candidate.email, subject: 'A sua candidatura', text: `Olá ${candidate.name},\n\nAgradecemos o seu interesse. Desta vez não vamos avançar com a sua candidatura.\n\nDesejamos-lhe sucesso.` });
+        const job = await this.jobForMail(candidate.jobId);
+        await this.mailer.send({ to: candidate.email, subject: 'A sua candidatura', template: 'application-rejected', data: { name: candidate.name, ...job } });
       }
       if (input.stage === 'INTERVIEW' && input.interviewAt) {
-        await this.mailer.send({ to: candidate.email, subject: 'Convite para entrevista', text: `Olá ${candidate.name},\n\nGostaríamos de o(a) entrevistar em ${new Date(input.interviewAt).toLocaleString('pt-AO', { timeZone: 'Africa/Luanda' })}.` });
+        const job = await this.jobForMail(candidate.jobId);
+        const interviewAt = new Date(input.interviewAt).toLocaleString('pt-AO', { timeZone: 'Africa/Luanda', dateStyle: 'full', timeStyle: 'short' });
+        await this.mailer.send({ to: candidate.email, subject: 'Convite para entrevista', template: 'interview-invitation', data: { name: candidate.name, ...job, interviewAt } });
       }
     }
     return updated;
@@ -122,7 +132,7 @@ export class RecruitmentService {
       const company = await tx.company.findUnique({ where: { careersSlug: slug } });
       const job = company ? await tx.jobOpening.findFirst({ where: { id: jobId, companyId: company.id, status: 'OPEN' } }) : null;
       if (!company || !job) throw new NotFoundError('Vaga', jobId);
-      return { tenantId: company.tenantId, job };
+      return { tenantId: company.tenantId, companyName: company.tradeName, job };
     });
 
     const key = `${target.tenantId}/recruitment/${randomUUID()}.pdf`;
@@ -132,7 +142,12 @@ export class RecruitmentService {
       if (duplicate) throw new BusinessRuleViolation('Já recebemos uma candidatura sua para esta vaga', 'duplicate_application');
       const candidate = await tx.candidate.create({ data: { tenantId: target.tenantId, jobId, name: input.name, email: input.email.toLowerCase(), phone: input.phone, cvKey: key, consentAt: new Date() } });
       await this.outbox.publish('candidate.applied', { candidateId: candidate.id, jobTitle: target.job.title, name: input.name });
-      await this.mailer.send({ to: input.email, subject: `Candidatura recebida — ${target.job.title}`, text: `Olá ${input.name},\n\nRecebemos a sua candidatura para ${target.job.title}. Entraremos em contacto se o seu perfil avançar.` });
+      await this.mailer.send({
+        to: input.email,
+        subject: `Candidatura recebida — ${target.job.title}`,
+        template: 'application-received',
+        data: { name: input.name, jobTitle: target.job.title, companyName: target.companyName },
+      });
       return { id: candidate.id, status: 'received' };
     });
   }

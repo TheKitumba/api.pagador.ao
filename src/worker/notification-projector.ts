@@ -3,7 +3,7 @@ import type { Role } from '@prisma/client';
 
 import { NotificationsService, type NewNotification } from '@/contexts/communication/application/notifications.service';
 import { RealtimePublisher } from '@/contexts/communication/infrastructure/realtime-publisher';
-import { Mailer } from '@/shared/application/ports';
+import { Mailer, type MailMessage } from '@/shared/application/ports';
 import { AppConfig } from '@/shared/infrastructure/config/app-config';
 import { Database } from '@/shared/infrastructure/prisma/database';
 
@@ -13,6 +13,10 @@ export interface IntegrationEvent {
   type: string;
   payload: Record<string, unknown>;
 }
+
+/** A templated e-mail without its recipient (sent to several users). */
+type WithoutRecipient<M> = M extends unknown ? Omit<M, 'to'> : never;
+type MailContent = WithoutRecipient<MailMessage>;
 
 interface ApprovalStepRef {
   approver: Role;
@@ -113,7 +117,11 @@ export class NotificationProjector {
     }
     const recipients = userIds.filter((userId) => !excluded.has(userId));
     await this.notifications.notifyUsers(recipients, notification);
-    await this.email(recipients, `Aprovação pendente: ${request.title}`, `Tem um pedido a aguardar a sua decisão (${step.label}).\n\n${this.config.env.APP_URL}/approvals`);
+    await this.email(recipients, {
+      subject: `Aprovação pendente: ${request.title}`,
+      template: 'approval-pending',
+      data: { title: request.title, stepLabel: step.label, approvalsUrl: `${this.config.env.APP_URL}/approvals` },
+    });
   }
 
   private async notifyRequester(type: string, requestId: string, reason?: string) {
@@ -130,12 +138,12 @@ export class NotificationProjector {
     await this.notifications.notifyUsers(members.map((member) => member.userId), { kind: 'INFO', title: 'Recibo de vencimento disponível', body: 'O seu salário foi pago. O recibo já está no portal.', href: '/me/payslips' });
   }
 
-  private async email(userIds: string[], subject: string, text: string) {
+  private async email(userIds: string[], message: MailContent) {
     if (userIds.length === 0) return;
     const users = await this.db.tx.user.findMany({ where: { id: { in: userIds }, email: { not: null } }, select: { email: true } });
     for (const { email } of users) {
       if (!email) continue;
-      await this.mailer.send({ to: email, subject, text }).catch((error: unknown) => this.logger.warn(`E-mail para ${email} falhou: ${String(error)}`));
+      await this.mailer.send({ ...message, to: email } as MailMessage).catch((error: unknown) => this.logger.warn(`E-mail para ${email} falhou: ${String(error)}`));
     }
   }
 }

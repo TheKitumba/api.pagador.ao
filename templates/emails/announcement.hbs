@@ -1,0 +1,7 @@
+{{#> layout preheader=(concat "Comunicado de " companyName) reason=(concat "Recebeu este comunicado porque tem acesso à conta " companyName " no pagador.ao.")}}
+  <p class="text-muted" style="margin:0 0 4px; font-size:13px; line-height:20px; font-weight:500; color:#5d6679;">Comunicado · {{companyName}}</p>
+  {{> heading text=title}}
+  {{paragraphs body}}
+  <p class="text-muted" style="margin:24px 0 0; font-size:13px; line-height:20px; color:#5d6679;">Publicado por {{authorName}}</p>
+  {{> button href=messagesUrl label="Abrir no pagador.ao"}}
+{{/layout}}

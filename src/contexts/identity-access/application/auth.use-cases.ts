@@ -277,11 +277,11 @@ export class ForgotPasswordUseCase {
 
     const token = randomToken();
     await this.prisma.oneTimeCode.create({ data: { identifier: email, purpose: 'PASSWORD_RESET', codeHash: sha256(token), expiresAt: new Date(Date.now() + 30 * 60_000) } });
-    const link = `${this.config.env.APP_URL}/reset-password?token=${token}`;
     await this.mailer.send({
       to: email,
       subject: 'Redefinir a palavra-passe — pagador.ao',
-      text: `Olá ${user.name},\n\nPara redefinir a palavra-passe abra: ${link}\nA ligação é válida durante 30 minutos. Se não pediu esta alteração, ignore este e-mail.`,
+      template: 'password-reset',
+      data: { name: user.name, resetUrl: `${this.config.env.APP_URL}/reset-password?token=${token}`, validMinutes: 30 },
     });
   }
 }

@@ -1,0 +1,12 @@
+{{#> layout preheader=(concat "O seu recibo de " period " segue em anexo.") reason=(concat "Recebeu este e-mail porque é trabalhador(a) de " companyName ".")}}
+  {{> heading text="O seu recibo de vencimento"}}
+  <p style="margin:0 0 16px;">Olá {{name}},</p>
+  <p style="margin:0 0 16px;">Segue em anexo o seu recibo de vencimento, em PDF. Também o encontra, a qualquer momento, no portal do trabalhador.</p>
+  {{#> details}}
+    {{> detail label="Empresa" value=companyName}}
+    {{> detail label="Período" value=period}}
+    {{#if paymentDate}}{{> detail label="Data de pagamento" value=paymentDate}}{{/if}}
+  {{/details}}
+  {{> button href=portalUrl label="Ver no portal"}}
+  {{#> callout variant="info"}}O recibo tem dados pessoais. Não o reencaminhe e guarde-o num local seguro.{{/callout}}
+{{/layout}}

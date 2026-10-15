@@ -1,0 +1,11 @@
+{{#> layout preheader=(concat inviterName " convidou-o para a conta " companyName " no pagador.ao.") reason="Recebeu este e-mail porque um administrador da empresa o convidou."}}
+  {{> heading text=(concat "Junte-se a " companyName)}}
+  <p style="margin:0 0 16px;"><strong>{{inviterName}}</strong> convidou-o(a) para a conta da empresa <strong>{{companyName}}</strong> no pagador.ao.</p>
+  {{#> details}}
+    {{> detail label="Empresa" value=companyName}}
+    {{> detail label="Acesso" value=(join roles ", ")}}
+    {{> detail label="Válido durante" value=(concat validDays " dias")}}
+  {{/details}}
+  {{> button href=acceptUrl label="Aceitar convite"}}
+  {{> fallback-link href=acceptUrl}}
+{{/layout}}

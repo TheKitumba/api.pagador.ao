@@ -62,6 +62,19 @@ export type Permission = (typeof PERMISSIONS)[number];
 const all = (prefix: string) => PERMISSIONS.filter((permission) => permission.startsWith(prefix));
 const reads = PERMISSIONS.filter((permission) => permission.endsWith('.read'));
 
+/** Role names as shown to people (invitations, e-mails). */
+export const ROLE_LABEL: Record<Role, string> = {
+  ACCOUNT_ADMIN: 'Administrador da conta',
+  HR_MANAGER: 'Gestor de RH',
+  HR_TECHNICIAN: 'Técnico de RH',
+  PAYROLL_PROCESSOR: 'Processador salarial',
+  FINANCIAL_APPROVER: 'Aprovador financeiro',
+  LINE_MANAGER: 'Chefia directa',
+  RECRUITER: 'Recrutador',
+  EMPLOYEE: 'Trabalhador',
+  AUDITOR: 'Auditor',
+};
+
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   ACCOUNT_ADMIN: [...reads.filter((p) => p !== 'disciplinary.read'), 'organization.write', 'settings.write', 'users.manage', 'communication.publish'],
   HR_MANAGER: [
