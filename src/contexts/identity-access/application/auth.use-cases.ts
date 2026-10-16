@@ -6,7 +6,7 @@ import { ApprovalsProvisioning } from '@/contexts/approvals/public';
 import { CompanyProvisioning } from '@/contexts/organization/public';
 import { PayrollProvisioning } from '@/contexts/payroll/public';
 import { Mailer, SmsSender } from '@/shared/application/ports';
-import { BusinessRuleViolation, ConflictError, UnauthorizedError, ValidationError } from '@/shared/domain/errors';
+import { BusinessRuleViolation, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } from '@/shared/domain/errors';
 import { Nif, PhoneNumber } from '@/shared/domain/value-objects';
 import { AuditService } from '@/shared/infrastructure/audit/audit.service';
 import { AppConfig } from '@/shared/infrastructure/config/app-config';
@@ -306,3 +306,46 @@ export class ResetPasswordUseCase {
   }
 }
 
+
+/**
+ * Opens another company of the same account: re-issues the session with that company and keeps it as
+ * the user's current one (refreshes and later logins open it). The presented refresh token is rotated
+ * like on refresh, so the previous session cannot be reused.
+ */
+@Injectable()
+export class SwitchCompanyUseCase {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly db: Database,
+    private readonly actors: ActorContext,
+    private readonly sessions: SessionIssuer,
+    private readonly audit: AuditService,
+  ) {}
+
+  async execute(companyId: string, refreshToken: string | undefined, info: RequestInfo) {
+    const actor = this.actors.current;
+    if (actor.roles.every((role) => role === 'EMPLOYEE')) throw new ForbiddenError('A sua conta só tem acesso à empresa onde trabalha', 'single_company');
+
+    // Row-level security limits this lookup to the actor's account.
+    const company = await this.db.tx.company.findUnique({ where: { id: companyId }, select: { id: true, tenantId: true } });
+    if (!company || company.tenantId !== actor.tenantId) throw new NotFoundError('Empresa', companyId);
+
+    const before = actor.companyId;
+    const membership = await this.db.tx.membership.update({
+      where: { tenantId_userId: { tenantId: actor.tenantId, userId: actor.userId } },
+      data: { companyId: company.id },
+    });
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } });
+    const session = await this.sessions.issue(user, membership, info);
+
+    if (refreshToken) {
+      const replacement = await this.prisma.refreshToken.findUniqueOrThrow({ where: { tokenHash: sha256(session.refreshToken) } });
+      await this.prisma.refreshToken.updateMany({
+        where: { tokenHash: sha256(refreshToken), userId: actor.userId, revokedAt: null },
+        data: { revokedAt: new Date(), replacedBy: replacement.id },
+      });
+    }
+    await this.audit.record({ action: 'session.switch_company', entityType: 'company', entityId: company.id, before: { companyId: before }, after: { companyId: company.id } });
+    return session;
+  }
+}

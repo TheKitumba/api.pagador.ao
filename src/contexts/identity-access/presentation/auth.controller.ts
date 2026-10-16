@@ -16,6 +16,7 @@ import {
   RequestLoginCodeUseCase,
   ResetPasswordUseCase,
   SetupTwoFactorUseCase,
+  SwitchCompanyUseCase,
   VerifyLoginCodeUseCase,
   VerifyTwoFactorLoginUseCase,
 } from '../application/auth.use-cases';
@@ -30,6 +31,7 @@ import {
   RegisterDto,
   ResetPasswordDto,
   SessionUserDto,
+  SwitchCompanyDto,
   TwoFactorCodeDto,
   TwoFactorSetupDto,
   TwoFactorVerifyDto,
@@ -57,6 +59,7 @@ export class AuthController {
     private readonly forgotPassword: ForgotPasswordUseCase,
     private readonly resetPassword: ResetPasswordUseCase,
     private readonly acceptInvitation: AcceptInvitationUseCase,
+    private readonly switchCompany: SwitchCompanyUseCase,
   ) {}
 
   @Public()
@@ -129,6 +132,20 @@ export class AuthController {
   @ApiOkResponse({ type: SessionUserDto })
   me() {
     return this.getSession.execute();
+  }
+
+  @Post('company')
+  @HttpCode(200)
+  @ApiCookieAuth()
+  @ApiOperation({
+    summary: 'Mudar de empresa',
+    description: 'Abre outra empresa da mesma conta: renova a sessão (cookies) com essa empresa e guarda-a como a actual do utilizador.',
+  })
+  @ApiOkResponse({ type: SessionUserDto })
+  async changeCompany(@Body() body: SwitchCompanyDto, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const session = await this.switchCompany.execute(body.companyId, (request.cookies as Record<string, string>)[REFRESH_COOKIE], info(request));
+    this.cookies.set(response, session);
+    return session.user;
   }
 
   @Public()

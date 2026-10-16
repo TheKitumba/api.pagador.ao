@@ -56,6 +56,8 @@ export class TwoFactorSetupDto extends createZodDto(z.object({ secret: z.string(
 export class OtpRequestDto extends createZodDto(z.object({ phone: z.string().describe('+244 9XX XXX XXX') })) {}
 export class OtpVerifyDto extends createZodDto(z.object({ phone: z.string(), code: z.string().regex(/^\d{6}$/) })) {}
 
+export class SwitchCompanyDto extends createZodDto(z.object({ companyId: z.uuid().describe('Empresa da mesma conta (GET /v1/companies)') })) {}
+
 export class ForgotPasswordDto extends createZodDto(z.object({ email: z.email() })) {}
 export class ResetPasswordDto extends createZodDto(z.object({ token: z.string().min(10), password: z.string().min(8) })) {}
 

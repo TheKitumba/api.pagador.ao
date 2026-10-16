@@ -55,6 +55,15 @@ class UpdatePositionDto extends createZodDto(positionSchema.extend({ orgUnitId: 
 export class OrganizationController {
   constructor(private readonly organization: OrganizationService) {}
 
+  @Get('companies')
+  @ApiOperation({
+    summary: 'Empresas da conta',
+    description: 'As empresas que o utilizador pode abrir (`current` marca a da sessão). Mudar de empresa: `POST /v1/auth/company`.',
+  })
+  companies() {
+    return this.organization.listCompanies();
+  }
+
   @Get('company')
   @ApiOperation({ summary: 'Empresa actual' })
   company() {

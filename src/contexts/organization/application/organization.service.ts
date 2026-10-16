@@ -30,6 +30,21 @@ export class OrganizationService {
 
   // Company -------------------------------------------------------------------
 
+  /**
+   * Companies of the account the user can open. Back-office users switch between all of them;
+   * an employee-only account sees just the company it works for.
+   */
+  async listCompanies() {
+    const actor = this.actor;
+    const employeeOnly = actor.roles.every((role) => role === 'EMPLOYEE');
+    const companies = await this.db.tx.company.findMany({
+      where: employeeOnly ? { id: actor.companyId } : { tenantId: actor.tenantId },
+      select: { id: true, legalName: true, tradeName: true, nif: true, province: true },
+      orderBy: { legalName: 'asc' },
+    });
+    return companies.map((company) => ({ ...company, current: company.id === actor.companyId }));
+  }
+
   async getCompany() {
     authorize(this.actor, 'organization.read');
     const company = await this.db.tx.company.findUnique({ where: { id: this.actor.companyId } });

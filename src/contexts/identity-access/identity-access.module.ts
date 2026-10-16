@@ -33,6 +33,7 @@ import { UsersController } from './presentation/users.controller';
     auth.EnableTwoFactorUseCase,
     auth.ForgotPasswordUseCase,
     auth.ResetPasswordUseCase,
+    auth.SwitchCompanyUseCase,
     users.ListUsersQuery,
     users.InviteUserUseCase,
     users.AcceptInvitationUseCase,

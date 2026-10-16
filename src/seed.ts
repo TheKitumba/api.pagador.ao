@@ -223,6 +223,12 @@ async function seedDemoCompany(app: Awaited<ReturnType<typeof NestFactory.create
       const roles: Role[] = ['ACCOUNT_ADMIN', 'HR_MANAGER', 'PAYROLL_PROCESSOR', 'FINANCIAL_APPROVER'];
       actors.set({ userId: session.user.id, tenantId, companyId, employeeId: null, name: 'Administrador Kianda', roles, permissions: permissionsFor(roles) });
 
+      // A second company in the group, to show switching between companies (POST /v1/auth/company).
+      const port = await tx.company.create({
+        data: { tenantId, legalName: 'Kianda Serviços Portuários, S.A.', tradeName: 'Kianda Portuária', nif: '5000348812', sizeClass: 'MEDIUM', province: 'Benguela', careersSlug: 'kianda-portuaria' },
+      });
+      await tx.establishment.create({ data: { tenantId, companyId: port.id, name: 'Terminal do Lobito', province: 'Benguela' } });
+
       const sites = new Map<string, string>();
       for (const site of SITES) sites.set(site.key, (await organization.createEstablishment({ name: site.name, province: site.province })).id);
 
